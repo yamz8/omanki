@@ -327,11 +327,8 @@ Item {
         textFormat: Text.PlainText
         width: parent.width
         wrapMode: Text.Wrap
-        text: root.stats
-            ? "ease " + root.stats.ease.toFixed(2)
-              + "  ·  " + Anki.percent(root.stats.retention) + " never relearned"
-              + "  ·  " + root.stats.lapsed + (root.stats.lapsed === 1 ? " lapsed card" : " lapsed cards")
-            : ""
+        text: Anki.healthLine(root.stats,
+                              root.stats && root.stats.lapsed === 1 ? "lapsed card" : "lapsed cards")
         color: root.foreground
         opacity: 0.5
         font.family: root.fontFamily

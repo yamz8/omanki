@@ -24,7 +24,7 @@ const EXPORTS = [
   "dayKey", "hashId", "parseDeck", "emptyProgress", "parseProgress",
   "stateFor", "buildQueue", "counts", "serializeProgress", "findEntry",
   "mergeProgress", "introducedToday", "reviewsToday", "remainingToday",
-  "deckStats", "percent", "appendCard", "dirOf", "baseOf", "MATURE_INTERVAL",
+  "deckStats", "percent", "healthLine", "appendCard", "dirOf", "baseOf", "MATURE_INTERVAL",
   "resolveDeck", "sanePerDay", "normalizeTags", "filterByTags", "sectionLabel", "promote", "UNDO_DEPTH",
   "READ_SH", "WRITE_SH", "relativeToHome", "READ_LIMIT", "fuzzInterval", "hitReadLimit",
   "LEECH_THRESHOLD", "isLeechLapse", "leechConfig", "unsuspendAll",
@@ -406,6 +406,9 @@ group("deck statistics")
 
   const empty = G.deckStats([], G.emptyProgress(), NOW, 20, 0)
   t("an empty deck is all zeroes, not NaN", empty.total === 0 && empty.ease === 0 && empty.retention === 0)
+  t("an unstarted deck says so instead of reporting zeroes", G.healthLine(empty, "lapsed") === "no reviews yet")
+  t("a started deck reports ease, retention and lapses",
+    G.healthLine(s, "lapsed").startsWith("ease ") && G.healthLine(s, "lapsed").endsWith(" lapsed"))
   t("percent formats a fraction", G.percent(0.8) === "80%")
   t("percent clamps", G.percent(9) === "100%" && G.percent(-1) === "0%")
 }
