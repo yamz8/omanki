@@ -300,11 +300,7 @@ Item {
         textFormat: Text.PlainText
         width: parent.width
         wrapMode: Text.Wrap
-        text: root.stats
-            ? "ease " + root.stats.ease.toFixed(2)
-              + "  ·  " + Anki.percent(root.stats.retention) + " never relearned"
-              + "  ·  " + root.stats.lapsed + " lapsed"
-            : ""
+        text: Anki.healthLine(root.stats, "lapsed")
         color: root.foreground
         opacity: 0.45
         font.family: root.fontFamily

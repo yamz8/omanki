@@ -987,6 +987,16 @@ function percent(fraction) {
   return Math.round(Math.max(0, Math.min(1, fraction || 0)) * 100) + "%"
 }
 
+// The "is this working" line. Before anything has been answered there is no
+// ease and no retention to report, and "ease 0.00 · 0% never relearned" reads
+// as a deck that is failing rather than one that has not started.
+function healthLine(stats, lapsedNoun) {
+  if (!stats || !(stats.seen > 0)) return "no reviews yet"
+  return "ease " + stats.ease.toFixed(2)
+    + "  ·  " + percent(stats.retention) + " never relearned"
+    + "  ·  " + stats.lapsed + " " + lapsedNoun
+}
+
 // ------------------------------------------------------------------ file I/O
 //
 // Both files live under the user's home, in predictable places, and the shell
