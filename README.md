@@ -60,6 +60,30 @@ never writes one unless you add a card through the `a` composer.
 The fullscreen overlay is summoned by a keybind, which you add yourself — see
 [Placing it and binding it](#placing-it-and-binding-it) below.
 
+## Importing an Anki deck
+
+omanki does not read `.apkg` files itself; that would mean SQLite and zip
+handling inside the shell. Instead the repo ships a small converter, and an
+agent skill that drives it:
+
+```bash
+python3 ~/.config/omarchy/plugins/yamz8.omanki/skills/apkg-to-omanki/convert.py \
+  shared-deck.apkg -o ~/.local/share/omanki/shared.json
+```
+
+Then point the `deck` setting at that file. It refuses to overwrite an existing
+file unless you pass `--force`, so it cannot replace your deck by accident.
+
+What comes across is text: the first two fields of each non-cloze note as front
+and back, plus tags. Images, audio, cloze notes and Anki's own scheduling do
+not, and the converter prints how many of each it left behind. A deck that
+lives on pictures will not survive the trip. Anything over the 256 KiB read
+cap is split into `-1`, `-2`, ... files, each a deck of its own. A newer
+package (`.anki21b`) needs Python 3.14+, `zstandard`, or the `zstd` command.
+
+With Claude Code, or any agent that reads `SKILL.md`, you can instead say
+"convert this .apkg for omanki" and let it run the same script.
+
 ## Placing it and binding it
 
 `omarchy plugin add --enable` offers to place the bar widget. If you skipped
