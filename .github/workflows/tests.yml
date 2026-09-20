@@ -33,6 +33,16 @@ jobs:
       - name: Rendering-safety tests
         run: node tests/rendering.test.mjs
 
+      # The .apkg converter is standard-library Python. 3.14 is used because
+      # its stdlib has zstd, which the newer package layout needs; the test
+      # skips that case on older interpreters.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.14'
+
+      - name: Anki package converter tests
+        run: python3 tests/apkg.test.py
+
       # tests/soak.sh is deliberately not run here. It drives the real shell
       # with real keystrokes and needs a Wayland compositor, a running
       # omarchy-shell, and the keyboard focus of the machine it runs on. It
