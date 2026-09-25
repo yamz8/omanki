@@ -233,6 +233,7 @@ Item {
           else if (k === "4") reviewer.answer("easy")
           else if (k === "u") reviewer.undo()
           else if (k === "r") reviewer.reload()
+          else if (k === "p") reviewer.replayAudio()
           else return
           event.accepted = true
         }
@@ -381,6 +382,7 @@ Item {
             width: parent.width
             visible: root.mode === "stats"
             stats: reviewer.deckStats
+            heatmap: reviewer.heatmap
             tab: root.statsTab
             foreground: root.foreground
             accent: Color.accent

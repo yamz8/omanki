@@ -449,6 +449,13 @@ function dayKey(now) {
   return d.getFullYear() + "-" + (month < 10 ? "0" : "") + month + "-" + (day < 10 ? "0" : "") + day
 }
 
+// Which study day of the week this instant falls in — 0 (Sunday) through 6
+// (Saturday), the same 4am rollover applied. Used only to line a heatmap's
+// columns up on real weeks, the way GitHub's does.
+function dayOfWeek(now) {
+  return new Date((now - ROLLOVER_HOUR * HOUR) * 1000).getDay()
+}
+
 // --------------------------------------------------------------------- deck
 
 // Cards are identified by a hash of their front, not by position, so
@@ -466,6 +473,17 @@ function hashId(text) {
 
 function text(value) {
   return value === undefined || value === null ? "" : String(value).trim()
+}
+
+// A media reference is a bare filename, looked up inside the deck's media
+// directory — never a path. Anything with a separator, or `.`/`..`, is
+// refused rather than partially trusted: a deck is as untrusted as any other
+// file this plugin reads, and a media field is exactly the kind of thing a
+// shared deck would use to try to point outside its own folder.
+function isMediaFilename(value) {
+  var v = text(value)
+  if (!v || v === "." || v === "..") return false
+  return v.indexOf("/") === -1 && v.indexOf("\\") === -1
 }
 
 // The read cap counts bytes, and a deck of accented or CJK text spends more
@@ -534,11 +552,70 @@ function parseDeck(raw) {
       id: id,
       front: front,
       back: back,
-      tags: Array.isArray(entry.tags) ? entry.tags.map(text).filter(Boolean) : []
+      tags: Array.isArray(entry.tags) ? entry.tags.map(text).filter(Boolean) : [],
+      // Media is additive and optional: a plain filename in the deck's media
+      // directory (see mediaDirFor), never a path. Anything else is dropped
+      // rather than failing the whole card — a bad media field should not
+      // cost a card its schedule.
+      frontImage: isMediaFilename(entry.frontImage) ? text(entry.frontImage) : "",
+      backImage: isMediaFilename(entry.backImage) ? text(entry.backImage) : "",
+      frontAudio: isMediaFilename(entry.frontAudio) ? text(entry.frontAudio) : "",
+      backAudio: isMediaFilename(entry.backAudio) ? text(entry.backAudio) : ""
     })
   }
 
   return { cards: cards, error: "" }
+}
+
+// The distinct media filenames a deck's cards refer to, in a stable order —
+// what gets sent to MEDIA_VALIDATE_SH, once per deck load rather than once
+// per card.
+var MEDIA_FIELDS = ["frontImage", "backImage", "frontAudio", "backAudio"]
+
+function collectMediaFilenames(cards) {
+  var seen = {}
+  var out = []
+  var list = cards || []
+  for (var i = 0; i < list.length; i++) {
+    for (var f = 0; f < MEDIA_FIELDS.length; f++) {
+      var name = list[i][MEDIA_FIELDS[f]]
+      if (name && !seen[name]) {
+        seen[name] = true
+        out.push(name)
+      }
+    }
+  }
+  return out
+}
+
+// Folds MEDIA_VALIDATE_SH's answer back onto the cards: each card gets a
+// `<field>Path` alongside its `<field>` filename, holding the validated
+// absolute path or "" when the filename was missing, unsafe, or never asked
+// about. Reviewer.qml renders only these — never the raw filename — so a
+// path that was not vetted can never reach an Image or a MediaPlayer.
+function attachMediaPaths(cards, pathByName) {
+  var map = pathByName || {}
+  var list = cards || []
+  var out = []
+  for (var i = 0; i < list.length; i++) {
+    var card = list[i]
+    var copy = {}
+    for (var k in card) copy[k] = card[k]
+    for (var f = 0; f < MEDIA_FIELDS.length; f++) {
+      var field = MEDIA_FIELDS[f]
+      var name = card[field]
+      copy[field + "Path"] = (name && map[name]) ? map[name] : ""
+    }
+    out.push(copy)
+  }
+  return out
+}
+
+// Sibling to the deck file, the way `media/` sits next to a note file in
+// other systems. Filenames in the deck are resolved relative to this, never
+// to an arbitrary path.
+function mediaDirFor(deckPath) {
+  return dirOf(deckPath) + "/media"
 }
 
 // A tag is written twice — once in the deck, once in shell.json — and those
@@ -661,8 +738,15 @@ function appendCard(raw, front, back, tags) {
 }
 
 function emptyProgress() {
-  return { reviews: {} }
+  return { reviews: {}, activity: {} }
 }
+
+// A day only ever gets one entry here, written once by freezeActivity and
+// never touched again — see there for why. A number past this many days old
+// is dropped on read rather than carried forever: nothing reads it once a
+// heatmap can no longer reach that far back, and dropping it here means an
+// old, heavily-used deck's progress file does not grow without bound.
+var ACTIVITY_MAX_DAYS = 371
 
 // Documents written before the day tally became derived carry `day` and
 // `introduced` fields; they are simply ignored, which costs at most one day's
@@ -677,6 +761,13 @@ function parseProgress(raw) {
       for (var id in data.reviews) {
         if (!Object.prototype.hasOwnProperty.call(data.reviews, id)) continue
         progress.reviews[id] = normalizeState(data.reviews[id])
+      }
+    }
+
+    if (data.activity && typeof data.activity === "object") {
+      for (var day in data.activity) {
+        if (!Object.prototype.hasOwnProperty.call(data.activity, day)) continue
+        progress.activity[day] = Math.max(0, Math.round(num(data.activity[day], 0)))
       }
     }
   } catch (e) {
@@ -744,6 +835,14 @@ function remainingToday(progress, now, newPerDay, reviewsPerDay) {
 // saves. Per card the newer `updated` wins, and a card only one side knows
 // about is kept. Answering the same card in two surfaces within one second is
 // not something a person can do, so ties keep `mine` and stay deterministic.
+//
+// `activity` merges by taking the larger of the two sides per day instead:
+// unlike a card's state, which is one fact with one owner at a time, a day's
+// frozen count is a plain number two surfaces could in principle have frozen
+// slightly differently. Both derive it from the same converged review data,
+// so in practice they agree and the max is a no-op — this only matters if
+// they do not, and picking the larger is the side more likely to have seen
+// the fuller picture.
 function mergeProgress(mine, theirs) {
   var out = {}
   var a = (mine && mine.reviews) || {}
@@ -759,7 +858,20 @@ function mergeProgress(mine, theirs) {
     if (!out[id] || t.updated > out[id].updated) out[id] = t
   }
 
-  return { reviews: out }
+  var activity = {}
+  var am = (mine && mine.activity) || {}
+  var at = (theirs && theirs.activity) || {}
+  var day
+  for (day in am) {
+    if (Object.prototype.hasOwnProperty.call(am, day)) activity[day] = Math.max(0, Math.round(num(am[day], 0)))
+  }
+  for (day in at) {
+    if (!Object.prototype.hasOwnProperty.call(at, day)) continue
+    var n = Math.max(0, Math.round(num(at[day], 0)))
+    activity[day] = Math.max(activity[day] || 0, n)
+  }
+
+  return { reviews: out, activity: activity }
 }
 
 function stateFor(progress, id) {
@@ -951,6 +1063,99 @@ function deckStats(cards, progress, now, newPerDay, reviewsPerDay) {
   return out
 }
 
+// ---------------------------------------------------------------- activity
+//
+// A GitHub-style calendar of how many cards were answered per day. There is
+// no review log — see deckStats' note on retention — so a day's count can
+// only be read off the cards' current `updated` fields, and only until one
+// of those cards is answered again on a later day, at which point the old
+// day's share of it is gone for good: a card carries a single `updated`, not
+// a history. freezeActivity is what saves a day's count before that happens.
+
+// Answered that day, the same rule answeredToday already applies to today —
+// generalised to any day so a past one can be frozen with it too.
+function answeredOn(progress, day) {
+  var reviews = (progress && progress.reviews) || {}
+  var n = 0
+  for (var id in reviews) {
+    if (!Object.prototype.hasOwnProperty.call(reviews, id)) continue
+    var s = reviews[id]
+    if (s && s.updated > 0 && dayKey(s.updated) === day) n++
+  }
+  return n
+}
+
+// Writes today's answeredOn count into `activity` for every elapsed day that
+// does not have one yet, going back up to ACTIVITY_MAX_DAYS. Never freezes
+// today itself — it is still being written, and stays live until it, too,
+// has elapsed.
+//
+// Call this on every reload. With the shell running continuously that
+// freezes each day within a minute of its own rollover, before anything
+// could touch that day's cards again. Reopened after being closed across one
+// or more days, it catches up whichever of those it still can — any card
+// from an unfrozen day that has not yet been answered again still carries
+// that day's `updated`, so the count is still recoverable at that point.
+function freezeActivity(progress, now) {
+  var activity = {}
+  var existing = (progress && progress.activity) || {}
+  for (var k in existing) {
+    if (Object.prototype.hasOwnProperty.call(existing, k)) activity[k] = existing[k]
+  }
+
+  var today = dayKey(now)
+  for (var i = 1; i <= ACTIVITY_MAX_DAYS; i++) {
+    var day = dayKey(now - i * DAY)
+    if (day === today) continue
+    if (Object.prototype.hasOwnProperty.call(activity, day)) continue
+    activity[day] = answeredOn(progress, day)
+  }
+
+  return { reviews: (progress && progress.reviews) || {}, activity: activity }
+}
+
+// One more than the 52 weeks GitHub's own calendar shows, so the oldest
+// column a caller asks for is never a stray sliver of a 53rd week.
+var HEATMAP_WEEKS = 53
+
+// A GitHub-style grid: `weeks` columns of 7 rows, Sunday at the top and
+// Saturday at the bottom, the last column always ending on today. Flat and
+// column-major — index i is row (i % 7) of column (i / 7 | 0) — since that is
+// the order a Repeater wants and there is no reason to make QML redo the
+// arithmetic this already has to do once to place today correctly.
+//
+// A cell after today in the final column, or before the window's start in
+// the first, is null: nothing to plot, which a caller must not confuse with
+// a real day of zero activity. Today's count is derived live, since it is
+// still changing; every earlier day prefers whatever freezeActivity already
+// recorded, falling back to the same live derivation only for a day that has
+// not yet been through a reload since it ended.
+function heatmapGrid(progress, now, weeks) {
+  var todayDow = dayOfWeek(now)
+  var today = dayKey(now)
+  var activity = (progress && progress.activity) || {}
+  var out = []
+
+  for (var col = 0; col < weeks; col++) {
+    for (var row = 0; row < 7; row++) {
+      var offset = (weeks - 1 - col) * 7 + (todayDow - row)
+      if (offset < 0) {
+        out.push(null)
+        continue
+      }
+      if (offset === 0) {
+        out.push({ day: today, count: answeredOn(progress, today) })
+        continue
+      }
+      var day = dayKey(now - offset * DAY)
+      var count = Object.prototype.hasOwnProperty.call(activity, day) ? activity[day] : answeredOn(progress, day)
+      out.push({ day: day, count: count })
+    }
+  }
+
+  return out
+}
+
 // Put every suspended card back in the rotation. The leech mark is kept: the
 // card has been trouble and the statistics should go on saying so - what is
 // cleared is only the part that hides it.
@@ -966,7 +1171,7 @@ function deckStats(cards, progress, now, newPerDay, reviewsPerDay) {
 // untouched card look newer than an answer somewhere else.
 function unsuspendAll(progress, now) {
   var reviews = (progress && progress.reviews) || {}
-  var out = { reviews: {} }
+  var out = { reviews: {}, activity: (progress && progress.activity) || {} }
   var restored = 0
 
   for (var id in reviews) {
@@ -1106,6 +1311,67 @@ var WRITE_SH = [
   'mv -f "$t" "/proc/self/fd/9/$name" || { rm -f "$t"; exit 74; }'
 ].join("\n")
 
+// Validates media filenames against the deck's media directory, in one call
+// rather than one per card per render. Given HOME, the media directory
+// relative to HOME, and a list of candidate filenames — one per line on
+// stdin, kept off argv the same way WRITE_SH keeps the document off it — it
+// walks to the media directory with the same symlink-refusing, ownership-
+// checking discipline as READ_SH/WRITE_SH, pins it, then for each filename
+// prints either the file's real path (if it resolves safely inside the
+// pinned directory) or a blank line. Blank lines matter as much as filled
+// ones: they are matched back up to the filenames by position, so the count
+// of lines out must always equal the count of names in.
+//
+// A missing or unsafe media directory exits before reading stdin at all — no
+// media is valid when there is nowhere safe to look for it — which the
+// caller reads as "every filename is invalid" from getting fewer lines back
+// than it asked about, the same way it already tolerates a truncated read.
+//
+// $1 = HOME, $2 = media directory relative to HOME.
+var MEDIA_VALIDATE_SH = [
+  WALK_SH,
+  'd="$base"',
+  'IFS="/"',
+  'for c in $dir; do',
+  '  [ -n "$c" ] || continue',
+  '  d="$d/$c"',
+  '  [ -L "$d" ] && exit 65',
+  '  [ -e "$d" ] || exit 0',
+  '  [ -d "$d" ] || exit 65',
+  '  [ -O "$d" ] || exit 65',
+  'done',
+  'unset IFS',
+  // The media directory itself is the final path component, checked the same
+  // way as everything above it before it is pinned — unlike READ_SH/WRITE_SH,
+  // which pin a file's *parent*, this pins the directory filenames resolve
+  // inside of.
+  'm="$d/$name"',
+  '[ -L "$m" ] && exit 65',
+  '[ -e "$m" ] || exit 0',
+  '[ -d "$m" ] || exit 65',
+  '[ -O "$m" ] || exit 65',
+  'd="$m"',
+  PIN_SH,
+  'while IFS= read -r name || [ -n "$name" ]; do',
+  '  case "$name" in',
+  '    ""|*/*|*\\\\*|.|..)',
+  '      echo ""',
+  '      continue',
+  '      ;;',
+  '  esac',
+  '  f="/proc/self/fd/9/$name"',
+  '  if [ -L "$f" ] || [ ! -f "$f" ]; then',
+  '    echo ""',
+  '    continue',
+  '  fi',
+  '  rp=$(readlink -f "$f" 2>/dev/null) || { echo ""; continue; }',
+  '  case "$rp" in',
+  '    "$d"/*) echo "$rp" ;;',
+  '    *) echo "" ;;',
+  '  esac',
+  'done'
+].join("\n")
+
 // Is `path` inside `home`, and where? Returns the path relative to home, or ""
 // when it is not contained — which the caller must treat as a refusal rather
 // than as a path to attempt. Doing this here rather than in shell keeps it
@@ -1128,7 +1394,7 @@ function relativeToHome(path, home) {
 
 function serializeProgress(progress) {
   var p = progress || emptyProgress()
-  return JSON.stringify({ reviews: p.reviews || {} }) + "\n"
+  return JSON.stringify({ reviews: p.reviews || {}, activity: p.activity || {} }) + "\n"
 }
 
 // Both surfaces resolve their settings the same way, so the resolution lives

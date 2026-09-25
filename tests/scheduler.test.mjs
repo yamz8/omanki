@@ -1003,8 +1003,8 @@ group("suspended cards can be put back")
   t("an empty document is handled", G.unsuspendAll(null, 9000).restored === 0)
 
   // The count must not be written to disk as part of the document.
-  t("the saved document carries only reviews",
-    Object.keys(JSON.parse(G.serializeProgress(r.progress))).join() === "reviews")
+  t("the saved document carries only reviews and activity",
+    Object.keys(JSON.parse(G.serializeProgress(r.progress))).sort().join() === "activity,reviews")
 
   // A restored card is queued again.
   const cards = [{ id: "a", front: "a", back: "a", tags: [] }]

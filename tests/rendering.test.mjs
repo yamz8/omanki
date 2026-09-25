@@ -84,13 +84,22 @@ group("no sink opts back into interpreting markup")
 group("the card face specifically")
 {
   const reviewer = readFileSync(join(root, "Reviewer.qml"), "utf8")
-  const facing = declarations(reviewer).filter((d) => /root\.current\.(front|back)/.test(d.body))
+  const declared = declarations(reviewer)
+  // The question/answer text itself.
+  const wording = declared.filter((d) =>
+    /text:\s*root\.current\s*\?\s*root\.current\.(front|back)\s*:/.test(d.body))
+  // The audio-replay glyphs, identified by the literal speaker character.
+  const glyphs = declared.filter((d) => d.body.includes("\u{f057e}"))
 
-  t("both card sinks are found", facing.length === 2)
+  t("both card sinks are found", wording.length === 2)
   t("the question is plain text",
-    facing.some((d) => /front/.test(d.body) && /textFormat:\s*Text\.PlainText/.test(d.body)))
+    wording.some((d) => /front/.test(d.body) && /textFormat:\s*Text\.PlainText/.test(d.body)))
   t("the answer is plain text",
-    facing.some((d) => /back/.test(d.body) && /textFormat:\s*Text\.PlainText/.test(d.body)))
+    wording.some((d) => /back/.test(d.body) && /textFormat:\s*Text\.PlainText/.test(d.body)))
+  t("both speaker glyphs are found",
+    glyphs.length === 2 && glyphs.some((d) => /right/.test(d.body)) && glyphs.some((d) => /left/.test(d.body)))
+  t("the speaker glyphs are plain text too",
+    glyphs.every((d) => /textFormat:\s*Text\.PlainText/.test(d.body)))
 }
 
 group("the parser deliberately does not sanitise")

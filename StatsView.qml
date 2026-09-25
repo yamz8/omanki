@@ -4,19 +4,22 @@ import qs.Ui
 import "Anki.js" as Anki
 
 // What the deck looks like from above: how far through it you are, what is
-// coming, and whether the scheduling is working. Everything shown is derived
-// from the cards themselves — the plugin keeps no review log, so nothing here
-// depends on history it does not have.
+// coming, and whether the scheduling is working. Almost everything shown is
+// derived from the cards themselves rather than any history the plugin keeps
+// — the one exception is ACTIVITY's calendar, which does need a day's count
+// saved before it stops being derivable; see activityTab and Anki.js's note
+// above answeredOn for why.
 //
-// In tabs, the same four the bar panel uses, for a reason the panel did not
+// In tabs, the same five the bar panel uses, for a reason the panel did not
 // have: the page fitted here, but fitting is not the same as reading. Six
 // figures at one weight, a composition bar, a week of forecast and a paragraph
 // of prose all arriving together gave the eye nowhere to land — everything on
 // it was equally loud, so it read as a table rather than an answer.
 //
 // So the split is by question. What is the deck (DECK), what is coming (DUE),
-// how did today go (TODAY), what has gone wrong (LEECHES). Each tab then gets
-// the room this surface always had, spent on one thing instead of four.
+// how did today go (TODAY), how has activity looked over time (ACTIVITY),
+// what has gone wrong (LEECHES). Each tab then gets the room this surface
+// always had, spent on one thing instead of five.
 //
 // Same tab names and same order as PanelStats, because the two surfaces should
 // not be two things to learn. What differs is what a tab may hold: at this
@@ -26,6 +29,10 @@ Item {
   id: root
 
   property var stats: null
+  // The full year, flat and column-major — see Anki.heatmapGrid. This
+  // surface has real width to spend, so it typically shows far more of it
+  // than the panel can; see activityTab.cells.
+  property var heatmap: []
   property color foreground: Color.foreground
   property color accent: Color.accent
   property color urgent: Color.urgent
@@ -45,8 +52,8 @@ Item {
   // ordinary case and should not carry a tab explaining a thing that has not
   // happened.
   readonly property var tabs: root.leeches > 0
-      ? ["DECK", "DUE", "TODAY", "LEECHES"]
-      : ["DECK", "DUE", "TODAY"]
+      ? ["DECK", "DUE", "TODAY", "ACTIVITY", "LEECHES"]
+      : ["DECK", "DUE", "TODAY", "ACTIVITY"]
 
   readonly property int count: root.tabs.length
 
@@ -60,7 +67,7 @@ Item {
     id: body
     width: parent.width
     height: Math.max(deckTab.implicitHeight, dueTab.implicitHeight,
-                     todayTab.implicitHeight, leechTab.implicitHeight)
+                     todayTab.implicitHeight, activityTab.implicitHeight, leechTab.implicitHeight)
 
     // ------------------------------------------------------------- deck
     //
@@ -352,6 +359,80 @@ Item {
       }
     }
 
+    // ------------------------------------------------------------ activity
+    //
+    // A GitHub-style calendar of cards answered per day, over as many
+    // trailing weeks as this width actually fits — see cells. There is no
+    // review log (this file's own top note), so history only exists from
+    // whenever this feature first started freezing a day's count; a deck
+    // that predates it just shows a shorter calendar, not a wrong one.
+    Column {
+      id: activityTab
+      width: parent.width
+      spacing: Style.spacing.md
+      visible: root.tab === 3
+
+      readonly property int cellSize: Style.space(13)
+      readonly property int cellGap: Style.space(3)
+      readonly property int weeksAvailable: root.heatmap ? Math.floor(root.heatmap.length / 7) : 0
+      readonly property int weeksVisible: Math.max(1, Math.min(activityTab.weeksAvailable,
+          Math.floor((width + activityTab.cellGap) / (activityTab.cellSize + activityTab.cellGap))))
+      readonly property var cells: (root.heatmap || []).slice(
+          (activityTab.weeksAvailable - activityTab.weeksVisible) * 7)
+      readonly property int peak: {
+        var max = 1
+        for (var i = 0; i < activityTab.cells.length; i++) {
+          var c = activityTab.cells[i]
+          if (c && c.count > max) max = c.count
+        }
+        return max
+      }
+      readonly property int total: {
+        var n = 0
+        for (var i = 0; i < activityTab.cells.length; i++) {
+          var c = activityTab.cells[i]
+          if (c) n += c.count
+        }
+        return n
+      }
+
+      Text {
+        textFormat: Text.PlainText
+        text: activityTab.total + (activityTab.total === 1 ? " card" : " cards")
+            + " in the last " + activityTab.weeksVisible + (activityTab.weeksVisible === 1 ? " week" : " weeks")
+        color: root.foreground
+        opacity: 0.55
+        font.family: root.fontFamily
+        font.pixelSize: Style.font.bodySmall
+      }
+
+      Grid {
+        rows: 7
+        flow: Grid.TopToBottom
+        spacing: activityTab.cellGap
+
+        Repeater {
+          model: activityTab.cells
+
+          Rectangle {
+            id: cell
+            required property var modelData
+            width: activityTab.cellSize
+            height: activityTab.cellSize
+            radius: Style.cornerRadius > 0 ? Style.space(3) : 0
+            // A future day (modelData null) still has to occupy its slot —
+            // Grid drops an invisible item from layout entirely, which would
+            // shift every day after it and break the calendar alignment this
+            // exists for. So it stays visible and just renders as nothing.
+            color: !cell.modelData ? "transparent"
+                : cell.modelData.count > 0
+                ? Util.alpha(root.accent, 0.25 + 0.75 * Math.min(1, cell.modelData.count / activityTab.peak))
+                : Util.alpha(root.foreground, 0.12)
+          }
+        }
+      }
+    }
+
     // ---------------------------------------------------------- leeches
     //
     // This is also the only place a suspended card can be found again: there is
@@ -361,7 +442,7 @@ Item {
       id: leechTab
       width: parent.width
       spacing: Style.spacing.md
-      visible: root.tab === 3 && root.leeches > 0
+      visible: root.tab === 4 && root.leeches > 0
 
       Text {
         textFormat: Text.PlainText

@@ -25,6 +25,10 @@ Item {
   id: root
 
   property var stats: null
+  // The full year, flat and column-major — see Anki.heatmapGrid. This view
+  // only has room for a handful of weeks, so it takes the trailing slice it
+  // fits rather than asking for a narrower grid to begin with; see cells.
+  property var heatmap: []
   property color foreground: Color.foreground
   property color accent: Color.accent
   property color urgent: Color.urgent
@@ -46,8 +50,8 @@ Item {
   // leech section does. A tab that is empty whenever you look at it is a tab
   // that teaches you not to look.
   readonly property var tabs: root.leeches > 0
-      ? ["DECK", "DUE", "TODAY", "LEECHES"]
-      : ["DECK", "DUE", "TODAY"]
+      ? ["DECK", "DUE", "TODAY", "ACTIVITY", "LEECHES"]
+      : ["DECK", "DUE", "TODAY", "ACTIVITY"]
 
   readonly property int count: root.tabs.length
 
@@ -65,7 +69,7 @@ Item {
     // panel keeps one height across the strip without the figure needing to be
     // rechecked every time a tab gains a line.
     height: Math.max(deckTab.implicitHeight, dueTab.implicitHeight,
-                     todayTab.implicitHeight, leechTab.implicitHeight)
+                     todayTab.implicitHeight, activityTab.implicitHeight, leechTab.implicitHeight)
 
     // ------------------------------------------------------------ deck
     Column {
@@ -312,12 +316,86 @@ Item {
       }
     }
 
+    // -------------------------------------------------------- activity
+    //
+    // A GitHub-style calendar of cards answered per day. The panel is about
+    // 340 wide, nowhere near the room a full year wants, so this takes only
+    // as many trailing weeks (columns) as actually fit rather than shrinking
+    // every cell to force the whole year in — see cells.
+    Column {
+      id: activityTab
+      width: parent.width
+      spacing: Style.spacing.sm
+      visible: root.tab === 3
+
+      readonly property int cellSize: Style.space(9)
+      readonly property int cellGap: Style.space(2)
+      readonly property int weeksAvailable: root.heatmap ? Math.floor(root.heatmap.length / 7) : 0
+      readonly property int weeksVisible: Math.max(1, Math.min(activityTab.weeksAvailable,
+          Math.floor((width + activityTab.cellGap) / (activityTab.cellSize + activityTab.cellGap))))
+      readonly property var cells: (root.heatmap || []).slice(
+          (activityTab.weeksAvailable - activityTab.weeksVisible) * 7)
+      readonly property int peak: {
+        var max = 1
+        for (var i = 0; i < activityTab.cells.length; i++) {
+          var c = activityTab.cells[i]
+          if (c && c.count > max) max = c.count
+        }
+        return max
+      }
+      readonly property int total: {
+        var n = 0
+        for (var i = 0; i < activityTab.cells.length; i++) {
+          var c = activityTab.cells[i]
+          if (c) n += c.count
+        }
+        return n
+      }
+
+      Text {
+        textFormat: Text.PlainText
+        text: activityTab.total + (activityTab.total === 1 ? " card" : " cards")
+            + " in the last " + activityTab.weeksVisible + (activityTab.weeksVisible === 1 ? " week" : " weeks")
+        color: root.foreground
+        opacity: 0.55
+        font.family: root.fontFamily
+        font.pixelSize: Style.font.caption
+      }
+
+      Grid {
+        rows: 7
+        flow: Grid.TopToBottom
+        spacing: activityTab.cellGap
+
+        Repeater {
+          model: activityTab.cells
+
+          Rectangle {
+            id: cell
+            required property var modelData
+            width: activityTab.cellSize
+            height: activityTab.cellSize
+            radius: Style.cornerRadius > 0 ? Style.space(2) : 0
+            // A future day (modelData null) still has to occupy its slot in
+            // the grid — Grid, like Column, drops an invisible item from
+            // layout entirely, which would shift every day after it and
+            // break the calendar alignment this whole thing exists for. So
+            // it stays visible and just renders as nothing.
+            color: !cell.modelData ? "transparent"
+                : cell.modelData.count > 0
+                ? Util.alpha(root.accent, 0.25 + 0.75 * Math.min(1, cell.modelData.count / activityTab.peak))
+                : Util.alpha(root.foreground, 0.12)
+          }
+        }
+      }
+    }
+
     // --------------------------------------------------------- leeches
     Column {
       id: leechTab
       width: parent.width
       spacing: Style.spacing.sm
-      visible: root.tab === 3 && root.leeches > 0
+      visible: root.tab === 4 && root.leeches > 0
 
       Text {
         textFormat: Text.PlainText
