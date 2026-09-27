@@ -57,8 +57,8 @@ Item {
   readonly property int lapsePercent:
       Anki.sanePerDay(root.pluginSettings.lapsePercent, Anki.LAPSE_PERCENT)
 
-  // review | stats | add. The overlay is the surface with room for more than
-  // one card, so it is the one that gets the other two.
+  // review | stats | add | browse. The overlay is the surface with room for
+  // more than one card, so it is the one that gets the other three.
   property string mode: "review"
 
   // What `l` last did, shown under the statistics for a few seconds. Restoring
@@ -138,6 +138,12 @@ Item {
     Qt.callLater(function() { composer.focusFirst() })
   }
 
+  function showBrowse() {
+    root.mode = "browse"
+    browser.reset()
+    Qt.callLater(function() { browser.focusFirst() })
+  }
+
   function dismiss() {
     root.close()
     if (root.shell && typeof root.shell.hide === "function")
@@ -209,7 +215,7 @@ Item {
             case Qt.Key_Return:
             case Qt.Key_Enter:
               // The composer owns typing, so these must reach its fields.
-              if (root.mode === "add") return
+              if (root.mode === "add" || root.mode === "browse") return
               // Reveal, then grade Good — the same two presses Anki trains
               // into your hands.
               reviewer.activate(); event.accepted = true; return
@@ -217,11 +223,12 @@ Item {
 
           // Everything below is a letter or digit, which in the composer is
           // someone typing a card rather than issuing a command.
-          if (root.mode === "add") return
+          if (root.mode === "add" || root.mode === "browse") return
 
           var k = event.text ? event.text.toLowerCase() : ""
           if (k === "s") root.mode = (root.mode === "stats" ? "review" : "stats")
           else if (k === "a") root.showAdd()
+          else if (k === "/") root.showBrowse()
           // Restoring is offered wherever the leech count is, which is the
           // statistics — so this one is handled before the bail-out that keeps
           // the grade keys to the review surface.
@@ -322,6 +329,7 @@ Item {
               anchors.verticalCenter: parent.verticalCenter
               text: root.mode === "stats" ? "STATISTICS"
                   : root.mode === "add" ? "ADD A CARD"
+                  : root.mode === "browse" ? "CARDS"
                   : Anki.sectionLabel(reviewer.phase, reviewer.currentState, root.tags)
               foreground: root.foreground
               fontFamily: root.fontFamily
@@ -400,6 +408,20 @@ Item {
             onDismissed: root.showReview()
           }
 
+          CardBrowser {
+            id: browser
+            width: parent.width
+            visible: root.mode === "browse"
+            cards: reviewer.deck
+            // Tall enough to scan a screenful, short enough that the card
+            // around it still sits inside the screen.
+            listHeight: Math.round(panel.height * 0.5)
+            foreground: root.foreground
+            accent: Color.accent
+            fontFamily: root.fontFamily
+            onDismissed: root.showReview()
+          }
+
           Text {
             textFormat: Text.PlainText
             width: parent.width
@@ -413,7 +435,7 @@ Item {
                 ? reviewer.leechNotice + "  ·  s stats to restore"
                 : (reviewer.revealed ? "1-4 grade  ·  space good" : "space reveal")
                   + (reviewer.canUndo ? "  ·  u undo" : "")
-                  + "  ·  s stats  ·  a add  ·  esc close"
+                  + "  ·  s stats  ·  a add  ·  / search  ·  esc close"
             color: root.foreground
             opacity: 0.4
             font.family: root.fontFamily
@@ -429,7 +451,7 @@ Item {
             text: (root.restoreNotice ? root.restoreNotice + "  ·  " : "")
                 + "← → tabs  ·  s back to review"
                 + (reviewer.deckStats && reviewer.deckStats.suspended > 0 ? "  ·  l restore leeches" : "")
-                + "  ·  a add a card  ·  esc close"
+                + "  ·  a add a card  ·  / search  ·  esc close"
             color: root.foreground
             opacity: 0.4
             font.family: root.fontFamily

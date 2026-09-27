@@ -29,7 +29,7 @@ const EXPORTS = [
   "READ_SH", "WRITE_SH", "relativeToHome", "READ_LIMIT", "fuzzInterval", "hitReadLimit",
   "LEECH_THRESHOLD", "isLeechLapse", "leechConfig", "unsuspendAll",
   "daysLate", "constrainIvl", "HARD_MULTIPLIER", "EASY_BONUS",
-  "LAPSE_PERCENT", "lapseFactor",
+  "LAPSE_PERCENT", "lapseFactor", "searchCards", "foldText",
 ]
 const G = {}
 new Function("exports", `${src}\nfor (const k of ${JSON.stringify(EXPORTS)}) exports[k] = eval(k)`)(G)
@@ -207,6 +207,36 @@ group("tag filtering")
     G.normalizeTags(["CLI", "cli", " Cli "]).join(",") === "cli")
   t("empty entries are dropped", G.normalizeTags(["", "  ", "a"]).join(",") === "a")
   t("null is an empty filter", G.normalizeTags(null).length === 0)
+}
+
+group("searching the deck")
+{
+  const deck = G.parseDeck(JSON.stringify([
+    { front: "Dismiss the last notification", back: "Super + ,", tags: ["omarchy"] },
+    { front: "Open (act on) the last notification", back: "Super + Alt + ,", tags: ["omarchy"] },
+    { front: "Ouvrir omanki en plein écran", back: "Super + Ctrl + J" },
+    { front: "Lock the screen", back: "Super + Ctrl + L — never mind the notification" },
+    { front: "Quelles personas ?", back: "implementer, qa, gp", tags: ["forge"] },
+  ])).cards
+  const fronts = (q) => G.searchCards(deck, q).map(c => c.front)
+
+  t("an empty query lists the whole deck, in order",
+    fronts("").join("|") === deck.map(c => c.front).join("|"))
+  t("a blank query lists the whole deck", G.searchCards(deck, "   ").length === 5)
+  t("the listing is a copy, not the deck itself", G.searchCards(deck, "") !== deck)
+  t("a word in the front matches", fronts("act").join("|") === "Open (act on) the last notification")
+  t("a word in the back matches", fronts("implementer").join("|") === "Quelles personas ?")
+  t("a tag matches", fronts("forge").join("|") === "Quelles personas ?")
+  t("case is ignored", fronts("LOCK").length === 1)
+  t("accents are ignored in the card", fronts("ecran").length === 1)
+  t("accents are ignored in the query", fronts("écran").length === 1)
+  t("every word must match, in any order", fronts("notification act").length === 1)
+  t("a word matching nothing empties the result", fronts("notification zebra").length === 0)
+  t("front matches rank before back-only matches",
+    fronts("notification").join("|") ===
+      "Dismiss the last notification|Open (act on) the last notification|Lock the screen")
+  t("an absent deck finds nothing", G.searchCards(undefined, "x").length === 0)
+  t("searching does not mutate the deck", deck.length === 5)
 }
 
 group("the section label")
