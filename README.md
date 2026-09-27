@@ -222,8 +222,9 @@ usually on a card that is not due for weeks.
 
 Every word you type has to appear somewhere in the front, the back or the
 tags, in any order; case and accents are ignored. Cards matching on the front
-come first. `↑` `↓` (and `PgUp` `PgDn`) move through the list, `esc` goes back
-to review.
+come first. `↑` `↓` move through the list and wrap around at the ends, so `↑`
+straight after opening lands on the last card; `PgUp` `PgDn` jump a page.
+`esc` goes back to review.
 
 It searches the whole deck, not just the cards a `tags` filter lets into the
 session, and it is read-only: looking a card up does not count as reviewing it

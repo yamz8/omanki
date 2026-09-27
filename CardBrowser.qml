@@ -53,10 +53,14 @@ Column {
     list.positionViewAtBeginning()
   }
 
-  function step(delta) {
+  // The arrows wrap, as in the shell's keybinding list: ↑ on opening lands on
+  // the last card. A page jump stops at the ends instead, so holding PgDn
+  // cannot fling the cursor back to the top.
+  function step(delta, wrap) {
     var n = root.results.length
     if (!n) return
-    list.currentIndex = Math.max(0, Math.min(n - 1, list.currentIndex + delta))
+    var i = list.currentIndex + delta
+    list.currentIndex = wrap ? ((i % n) + n) % n : Math.max(0, Math.min(n - 1, i))
   }
 
   TextField {
@@ -70,12 +74,12 @@ Column {
 
     // The field keeps focus while the arrows walk the list, so typing and
     // moving never need a mode switch between them.
-    Keys.onUpPressed: function(event) { root.step(-1); event.accepted = true }
-    Keys.onDownPressed: function(event) { root.step(1); event.accepted = true }
+    Keys.onUpPressed: function(event) { root.step(-1, true); event.accepted = true }
+    Keys.onDownPressed: function(event) { root.step(1, true); event.accepted = true }
     Keys.onPressed: function(event) {
       var page = Math.max(1, Math.floor(list.height / Style.space(56)))
-      if (event.key === Qt.Key_PageUp) { root.step(-page); event.accepted = true }
-      else if (event.key === Qt.Key_PageDown) { root.step(page); event.accepted = true }
+      if (event.key === Qt.Key_PageUp) { root.step(-page, false); event.accepted = true }
+      else if (event.key === Qt.Key_PageDown) { root.step(page, false); event.accepted = true }
     }
   }
 
