@@ -116,6 +116,7 @@ same restart clears it.
 | `h` `l` | Move between statistics tabs (bar panel only) |
 | `l` | Restore suspended leeches (overlay) |
 | `a` | Add a card (overlay only) |
+| `/` | Search the deck (overlay only) |
 | `r` | Reload the deck from disk |
 | `esc` | Close |
 
@@ -211,6 +212,22 @@ exists, since a card is identified by its front and a duplicate would share one
 schedule and never be seen. What it does not preserve is your *formatting*: the
 file is reserialized at two-space indent, so hand-tuned whitespace does not
 survive an in-app add.
+
+## Searching the deck
+
+`/` in the overlay lists every card, face up, and typing narrows the list —
+the same shape as the shell's own keybinding list. A deck built from your own
+notes is a reference as much as a drill, and the answer you need right now is
+usually on a card that is not due for weeks.
+
+Every word you type has to appear somewhere in the front, the back or the
+tags, in any order; case and accents are ignored. Cards matching on the front
+come first. `↑` `↓` (and `PgUp` `PgDn`) move through the list, `esc` goes back
+to review.
+
+It searches the whole deck, not just the cards a `tags` filter lets into the
+session, and it is read-only: looking a card up does not count as reviewing it
+and leaves its schedule alone.
 
 ## Your deck
 
@@ -548,6 +565,7 @@ write, so a fixed sleep tests the machine's mood rather than the plugin.
 | `Reviewer.qml` | The session: deck, progress, queue, persistence, card face. |
 | `GradeButtons.qml` | The four priced grade buttons, shared by both surfaces. |
 | `CardComposer.qml` | The add-a-card form behind `a`, in the overlay only. |
+| `CardBrowser.qml` | The searchable card list behind `/`, in the overlay only. |
 | `StatsView.qml` | The statistics behind `s` in the overlay, on one page. |
 | `PanelStats.qml` | The same numbers in tabs, for the width the bar panel has. |
 | `StatsTabs.qml` | The tab strip, which rides on the panel's section header. |

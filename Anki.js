@@ -577,6 +577,45 @@ function filterByTags(cards, wanted) {
   return kept
 }
 
+// A deck holds things worth looking up, not only things worth being asked, so
+// the overlay can search it. Matching folds case and accents — a card typed
+// with "é" should turn up for someone typing "e" in a hurry — and every word
+// of the query has to appear somewhere in the front, the back or the tags,
+// in any order, which is what typing a few remembered words expects.
+function foldText(value) {
+  var s = text(value).toLowerCase()
+  // normalize() is ES2015; an engine without it still gets case folding.
+  if (typeof s.normalize === "function") s = s.normalize("NFD").replace(/[̀-ͯ]/g, "")
+  return s
+}
+
+// Cards whose front matches every word come first, since the front is what a
+// card is about; otherwise deck order, so results do not reshuffle as the
+// query grows. An empty query lists the whole deck, so the same view is a
+// browser to scroll before it is a search to narrow.
+function searchCards(cards, query) {
+  var list = cards || []
+  var words = foldText(query).split(/\s+/).filter(Boolean)
+  if (!words.length) return list.slice()
+
+  var onFront = []
+  var elsewhere = []
+  for (var i = 0; i < list.length; i++) {
+    var c = list[i]
+    var front = foldText(c.front)
+    var all = front + "\n" + foldText(c.back) + "\n" + foldText((c.tags || []).join(" "))
+
+    var hit = true
+    var frontHit = true
+    for (var j = 0; j < words.length; j++) {
+      if (all.indexOf(words[j]) === -1) { hit = false; break }
+      if (front.indexOf(words[j]) === -1) frontHit = false
+    }
+    if (hit) (frontHit ? onFront : elsewhere).push(c)
+  }
+  return onFront.concat(elsewhere)
+}
+
 // The one-line state summary above the card. Both surfaces render it, so it is
 // written once here rather than twice in QML.
 function sectionLabel(phase, state, tags) {
