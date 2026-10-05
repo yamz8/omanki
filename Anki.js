@@ -68,7 +68,13 @@ var LEECH_SUSPEND = true
 // which means a deck past it arrives with its tail cut off rather than whole.
 // READ_SH applies this and parseDeck recognises having hit it, so the two have
 // to agree; that is why it is named once here instead of written twice.
-var READ_LIMIT = 262144
+//
+// 1 MiB rather than 256 KiB: a deck of real sentences, kept readable with
+// two-space indentation, spends 250-300 bytes a card, so 256 KiB was reached
+// at roughly nine hundred cards — a size an ordinary learner reaches in weeks,
+// not an inflated file. A megabyte is still nothing to a shell process and
+// leaves room for several thousand cards.
+var READ_LIMIT = 1048576
 
 function isGrade(g) {
   return GRADES.indexOf(g) !== -1

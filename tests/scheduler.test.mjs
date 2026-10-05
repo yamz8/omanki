@@ -710,9 +710,9 @@ group("reading, when there is simply nothing there")
   writeFileSync(join(home2, REL), '{"reviews":{}}\n')
   t("a regular file is read", sh(G.READ_SH, home2, REL).stdout.trim() === '{"reviews":{}}')
 
-  writeFileSync(join(home2, REL), "x".repeat(500_000))
+  writeFileSync(join(home2, REL), "x".repeat(G.READ_LIMIT * 2))
   t("an oversized file is truncated, not swallowed whole",
-    sh(G.READ_SH, home2, REL).stdout.length === 262_144)
+    sh(G.READ_SH, home2, REL).stdout.length === 1_048_576)
 
   // The cap the shell applies and the cap the parser recognises are the same
   // number, so a deck cut off by the first is reported as such by the second.
@@ -723,7 +723,7 @@ group("reading, when there is simply nothing there")
   // one: the shell truncating and the parser noticing are two halves of the
   // same fix, and the bug was that they did not know about each other.
   writeFileSync(join(home2, REL), JSON.stringify({ cards: Array.from(
-    { length: 12_000 }, (_, i) => ({ front: "q" + i, back: "a" + i })) }))
+    { length: Math.ceil(G.READ_LIMIT / 16) }, (_, i) => ({ front: "q" + i, back: "a" + i })) }))
   t("a real oversized deck comes back reported as too large",
     /too large/i.test(G.parseDeck(sh(G.READ_SH, home2, REL).stdout).error))
 }
@@ -733,7 +733,7 @@ group("a deck too large to read says so")
   // A truncated deck fails to parse, but not for any reason the user can find
   // by looking at their file. Reporting it as a syntax error sends them
   // hunting for a missing brace that is not there.
-  const whole = JSON.stringify({ cards: Array.from({ length: 12_000 },
+  const whole = JSON.stringify({ cards: Array.from({ length: Math.ceil(G.READ_LIMIT / 16) },
     (_, i) => ({ front: "q" + i, back: "a" + i })) })
   const cut = whole.slice(0, G.READ_LIMIT)
 
@@ -758,6 +758,16 @@ group("a deck too large to read says so")
     G.hitReadLimit(wide) && wide.length < G.READ_LIMIT)
   t("an ordinary deck is not mistaken for a truncated one",
     !G.hitReadLimit('{"cards":[]}'))
+
+  // The cap exists to stop an inflated file, not a learner's deck. A thousand
+  // cards of sentence-length text, pretty-printed the way people keep a file
+  // they edit by hand, has to arrive whole.
+  const sentence = "A card written as a full sentence, the way a learner phrases it. "
+  const real = JSON.stringify({ cards: Array.from({ length: 1_000 }, (_, i) => ({
+    front: i + " " + sentence + sentence, back: sentence + sentence,
+    tags: ["drills", "chapter-" + (i % 12)] })) }, null, 2)
+  t("a thousand real-sized cards fit under the cap",
+    !G.hitReadLimit(real) && G.parseDeck(real).cards.length === 1_000)
 
   // Appending is the only path that writes the deck, so it refuses on size
   // before it parses rather than relying on the parse to fail.

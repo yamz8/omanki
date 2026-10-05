@@ -460,7 +460,7 @@ every other application and is not a plugin's to tighten. Only directories the
 plugin creates are set private (0700), and the data files themselves are 0600.
 
 Reads additionally refuse anything that is not a regular file and open
-non-blocking, so a planted FIFO cannot stall the shell, stopping at 256 KiB.
+non-blocking, so a planted FIFO cannot stall the shell, stopping at 1 MiB.
 A deck past that limit arrives truncated, which the parser recognises by size
 and reports as *too large* rather than as a syntax error in your file — and
 the `a` composer refuses to write a deck it only half read.
